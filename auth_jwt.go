@@ -19,12 +19,21 @@ type GinJWTMiddleware struct {
 	// Realm name to display to the user. Required.
 	Realm string
 
-	// signing algorithm - possible values are HS256, HS384, HS512
+	// signing algorithm - possible values are:
+	//
+	// 		HS256, HS384, HS512
+	//    RS256, RS384, RS512
+	//    ES256, ES384, ES512
+	//
 	// Optional, default is HS256.
 	SigningAlgorithm string
 
-	// Secret key used for signing. Required.
+	// HMAC Secret key used for signing. Required for HSxxx algorithms
 	Key []byte
+
+	// Asymmetric keys used for signing. Required for RSxxx and ESxxx algorithms
+	SignKey   interface{}
+	VerifyKey interface{}
 
 	// Duration that a jwt token is valid. Optional, defaults to one hour.
 	Timeout time.Duration
@@ -130,8 +139,24 @@ func (mw *GinJWTMiddleware) MiddlewareInit() error {
 		return errors.New("realm is required")
 	}
 
-	if mw.Key == nil {
-		return errors.New("secret key is required")
+	isSymmetricAlgo := mw.SigningAlgorithm == "HS256" || mw.SigningAlgorithm == "HS384" || mw.SigningAlgorithm == "HS512"
+
+	if isSymmetricAlgo {
+		if mw.Key == nil {
+			return errors.New("secret key is required")
+		}
+		// symmetrical algorithms use the same key for signing and verification of token
+		mw.SignKey = mw.Key
+		mw.VerifyKey = mw.Key
+	}
+
+	if !isSymmetricAlgo {
+		if mw.SignKey == nil {
+			return errors.New("private key is required")
+		}
+		if mw.VerifyKey == nil {
+			return errors.New("public key is required")
+		}
 	}
 
 	return nil
@@ -220,7 +245,7 @@ func (mw *GinJWTMiddleware) LoginHandler(c *gin.Context) {
 	claims["exp"] = expire.Unix()
 	claims["orig_iat"] = mw.TimeFunc().Unix()
 
-	tokenString, err := token.SignedString(mw.Key)
+	tokenString, err := token.SignedString(mw.SignKey)
 
 	if err != nil {
 		mw.unauthorized(c, http.StatusUnauthorized, "Create JWT Token faild")
@@ -260,7 +285,7 @@ func (mw *GinJWTMiddleware) RefreshHandler(c *gin.Context) {
 	newClaims["exp"] = expire.Unix()
 	newClaims["orig_iat"] = origIat
 
-	tokenString, err := newToken.SignedString(mw.Key)
+	tokenString, err := newToken.SignedString(mw.SignKey)
 
 	if err != nil {
 		mw.unauthorized(c, http.StatusUnauthorized, "Create JWT Token faild")
@@ -301,7 +326,7 @@ func (mw *GinJWTMiddleware) TokenGenerator(userID string) string {
 	claims["exp"] = mw.TimeFunc().Add(mw.Timeout).Unix()
 	claims["orig_iat"] = mw.TimeFunc().Unix()
 
-	tokenString, _ := token.SignedString(mw.Key)
+	tokenString, _ := token.SignedString(mw.SignKey)
 
 	return tokenString
 }
@@ -364,7 +389,7 @@ func (mw *GinJWTMiddleware) parseToken(c *gin.Context) (*jwt.Token, error) {
 			return nil, errors.New("invalid signing algorithm")
 		}
 
-		return mw.Key, nil
+		return mw.VerifyKey, nil
 	})
 }
 
