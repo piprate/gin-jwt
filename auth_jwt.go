@@ -8,6 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gopkg.in/dgrijalva/jwt-go.v3"
+	"crypto/rsa"
+	"crypto/ecdsa"
 )
 
 // GinJWTMiddleware provides a Json-Web-Token authentication implementation. On failure, a 401 HTTP response
@@ -148,18 +150,31 @@ func (mw *GinJWTMiddleware) MiddlewareInit() error {
 		// symmetrical algorithms use the same key for signing and verification of token
 		mw.SignKey = mw.Key
 		mw.VerifyKey = mw.Key
-	}
-
-	if !isSymmetricAlgo {
-		if mw.SignKey == nil {
+	} else {
+		if isNil(mw.SignKey) {
 			return errors.New("private key is required")
 		}
-		if mw.VerifyKey == nil {
+		if isNil(mw.VerifyKey) {
 			return errors.New("public key is required")
 		}
 	}
 
 	return nil
+}
+
+func isNil(key interface{}) bool {
+	switch v := key.(type) {
+	case *rsa.PrivateKey:
+		return v == nil
+	case *rsa.PublicKey:
+		return v == nil
+	case *ecdsa.PrivateKey:
+		return v == nil
+	case *ecdsa.PublicKey:
+		return v == nil
+	default:
+		return false
+	}
 }
 
 // MiddlewareFunc makes GinJWTMiddleware implement the Middleware interface.
@@ -205,7 +220,10 @@ func (mw *GinJWTMiddleware) middlewareImpl(c *gin.Context) {
 func (mw *GinJWTMiddleware) LoginHandler(c *gin.Context) {
 
 	// Initial middleware default setting.
-	mw.MiddlewareInit()
+	if err := mw.MiddlewareInit(); err != nil {
+		mw.unauthorized(c, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	var loginVals Login
 
