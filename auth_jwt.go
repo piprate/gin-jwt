@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"crypto/ecdsa"
+	"crypto/rsa"
 	"github.com/gin-gonic/gin"
 	"gopkg.in/dgrijalva/jwt-go.v3"
-	"crypto/rsa"
-	"crypto/ecdsa"
 )
 
 // GinJWTMiddleware provides a Json-Web-Token authentication implementation. On failure, a 401 HTTP response
@@ -151,10 +151,10 @@ func (mw *GinJWTMiddleware) MiddlewareInit() error {
 		mw.SignKey = mw.Key
 		mw.VerifyKey = mw.Key
 	} else {
-		if isNil(mw.SignKey) {
+		if isBadPrivateKey(mw.SignKey) {
 			return errors.New("private key is required")
 		}
-		if isNil(mw.VerifyKey) {
+		if isBadPublicKey(mw.VerifyKey) {
 			return errors.New("public key is required")
 		}
 	}
@@ -162,18 +162,25 @@ func (mw *GinJWTMiddleware) MiddlewareInit() error {
 	return nil
 }
 
-func isNil(key interface{}) bool {
+func isBadPrivateKey(key interface{}) bool {
 	switch v := key.(type) {
 	case *rsa.PrivateKey:
 		return v == nil
-	case *rsa.PublicKey:
-		return v == nil
 	case *ecdsa.PrivateKey:
+		return v == nil
+	default:
+		return true
+	}
+}
+
+func isBadPublicKey(key interface{}) bool {
+	switch v := key.(type) {
+	case *rsa.PublicKey:
 		return v == nil
 	case *ecdsa.PublicKey:
 		return v == nil
 	default:
-		return false
+		return true
 	}
 }
 
